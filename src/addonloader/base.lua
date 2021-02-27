@@ -3,6 +3,7 @@
 --
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 --
+
 --- Fcitx module
 -- @module fcitx
 local fcitx = require("fcitx.core")
@@ -104,13 +105,24 @@ local EventType = {
     KeyEvent = 0x0001000 | 0x5,
     SurroundingTextUpdated = 0x0001000 | 0x7,
     CursorRectChanged = 0x0001000 | 0x9,
-    InputMethodActivated = 0x0001000 | 0xA,
-    InputMethodDeactivated = 0x0001000 | 0xB,
+    SwitchInputMethod = 0x0001000 | 0xA,
+    InputMethodActivated = 0x0001000 | 0xB,
+    InputMethodDeactivated = 0x0001000 | 0xC,
 
     CommitString = 0x0002000 | 0x2,
     UpdatePreedit = 0x0002000 | 0x4,
 }
 
 fcitx.EventType = EventType
+
+local oldsetCurrentInputMethod=fcitx.setCurrentInputMethod
+local function setCurrentInputMethod(name,local_im)
+    if(local_im == nil) then
+        local_im = true
+    end    
+    oldsetCurrentInputMethod(name,local_im)
+end
+
+fcitx.setCurrentInputMethod = setCurrentInputMethod
 
 return fcitx

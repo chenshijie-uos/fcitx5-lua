@@ -13,8 +13,6 @@
 #include <fcitx/addonmanager.h>
 #include <fcitx/instance.h>
 #include <quickphrase_public.h>
-///
-// @module fcitx
 
 namespace fcitx {
 
@@ -62,6 +60,8 @@ private:
     std::unique_ptr<HandlerTableEntry<EventHandler>> handler_;
 };
 
+///
+// @module fcitx
 class Converter {
 public:
     Converter(std::string functionName, ScopedConnection connection)
@@ -110,9 +110,10 @@ private:
     DEFINE_LUA_FUNCTION(log);
     /// Watch for a event from fcitx.
     // @function watchEvent
-    // @fcitx.EventType event Event Type.
+    // @int event Event Type.
     // @string function the function name.
     // @return A unique integer identifier.
+    // @see EventType
     DEFINE_LUA_FUNCTION(watchEvent);
     /// Unwatch a certain event.
     // @function unwatchEvent
@@ -123,6 +124,14 @@ private:
     // @function currentInputMethod
     // @treturn string the unique string of current input method.
     DEFINE_LUA_FUNCTION(currentInputMethod);
+    /// Change the current input method
+    // @function setCurrentInputMethod
+    // @string name the unique string of the input method name.
+    DEFINE_LUA_FUNCTION(setCurrentInputMethod);
+    /// Return the current program name
+    // @function currentProgram
+    // @treturn string the string of current program name.
+    DEFINE_LUA_FUNCTION(currentProgram);
     /// Add a string converter for committing string.
     // @function addConverter
     // @string function the function name.
@@ -181,6 +190,8 @@ private:
     std::tuple<int> watchEventImpl(int eventType, const char *function);
     std::tuple<> unwatchEventImpl(int id);
     std::tuple<std::string> currentInputMethodImpl();
+    std::tuple<> setCurrentInputMethodImpl(const char *str, bool local);
+    std::tuple<std::string> currentProgramImpl();
 
     std::tuple<int> addConverterImpl(const char *function);
     std::tuple<> removeConverterImpl(int id);
