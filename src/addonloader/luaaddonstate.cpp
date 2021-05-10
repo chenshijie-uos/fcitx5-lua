@@ -179,16 +179,16 @@ std::tuple<int> LuaAddonState::watchEventImpl(int eventType,
     case EventType::InputContextKeyEvent:
         handler = watchEvent<KeyEvent>(
             EventType::InputContextKeyEvent, newId,
-            [](std::unique_ptr<LuaState> &state, KeyEvent &event_) -> int {
-                lua_pushinteger(state, event_.key().sym());
-                lua_pushinteger(state, event_.key().states());
-                lua_pushboolean(state, event_.isRelease());
+            [](std::unique_ptr<LuaState> &state, KeyEvent &event) -> int {
+                lua_pushinteger(state, event.key().sym());
+                lua_pushinteger(state, event.key().states());
+                lua_pushboolean(state, event.isRelease());
                 return 3;
             },
-            [](std::unique_ptr<LuaState> &state, KeyEvent &event_) {
+            [](std::unique_ptr<LuaState> &state, KeyEvent &event) {
                 auto b = lua_toboolean(state, -1);
                 if (b) {
-                    event_.filterAndAccept();
+                    event.filterAndAccept();
                 }
             });
         break;
@@ -196,19 +196,27 @@ std::tuple<int> LuaAddonState::watchEventImpl(int eventType,
         handler = watchEvent<CommitStringEvent>(
             EventType::InputContextCommitString, newId,
             [](std::unique_ptr<LuaState> &state,
-               CommitStringEvent &event_) -> int {
-                lua_pushstring(state, event_.text().c_str());
+               CommitStringEvent &event) -> int {
+                lua_pushstring(state, event.text().c_str());
                 return 1;
             });
         break;
-    case EventType::InputContextSwitchInputMethod:
     case EventType::InputContextInputMethodActivated:
     case EventType::InputContextInputMethodDeactivated:
         handler = watchEvent<InputMethodNotificationEvent>(
             static_cast<EventType>(eventType), newId,
             [](std::unique_ptr<LuaState> &state,
-               InputMethodNotificationEvent &event_) -> int {
-                lua_pushstring(state, event_.name().c_str());
+               InputMethodNotificationEvent &event) -> int {
+                lua_pushstring(state, event.name().c_str());
+                return 1;
+            });
+        break;
+    case EventType::InputContextSwitchInputMethod:
+        handler = watchEvent<InputContextSwitchInputMethodEvent>(
+            static_cast<EventType>(eventType), newId,
+            [](std::unique_ptr<LuaState> &state,
+               InputContextSwitchInputMethodEvent &event) -> int {
+                lua_pushstring(state, event.oldInputMethod().c_str());
                 return 1;
             });
         break;
@@ -401,21 +409,16 @@ LuaAddonState::standardPathLocateImpl(int type, const char *path,
 }
 
 std::tuple<std::string> LuaAddonState::UTF16ToUTF8Impl(const char *str) {
-    auto len = strlen(str);
-    if (len % 2 != 0) {
-        return {};
-    }
-    len /= 2;
-    std::string result;
     auto data = reinterpret_cast<const uint16_t *>(str);
+    std::string result;
     size_t i = 0;
-    while (i < len) {
+    while (data[i]) {
         uint32_t ucs4 = 0;
         if (data[i] < 0xD800 || data[i] > 0xDFFF) {
             ucs4 = data[i];
             i += 1;
         } else if (0xD800 <= data[i] && data[i] <= 0xDBFF) {
-            if (i + 1 >= len) {
+            if (!data[i + 1]) {
                 return {};
             }
             if (0xDC00 <= data[i + 1] && data[i + 1] <= 0xDFFF) {
@@ -424,6 +427,8 @@ std::tuple<std::string> LuaAddonState::UTF16ToUTF8Impl(const char *str) {
                        (1 << 16);
                 i += 2;
             }
+        } else if (0xDC00 <= data[i] && data[i] <= 0xDFFF) {
+            return {};
         }
         result.append(utf8::UCS4ToUTF8(ucs4));
     }
@@ -440,27 +445,27 @@ std::tuple<std::string> LuaAddonState::UTF8ToUTF16Impl(const char *str) {
         if (ucs4 < 0x10000) {
             result.push_back(static_cast<uint16_t>(ucs4));
         } else if (ucs4 < 0x110000) {
-            result.push_back(0xD800 | (((ucs4 >> 16) & 0x1f) - 1) |
-                             (ucs4 >> 10));
+            result.push_back(0xD800 | (((ucs4 - 0x10000) >> 10) & 0x3ff));
             result.push_back(0xDC00 | (ucs4 & 0x3ff));
         } else {
             return {};
         }
     }
     result.push_back(0);
-    return std::string(reinterpret_cast<char *>(result.data()));
+    return std::string(reinterpret_cast<char *>(result.data()),
+                       result.size() * sizeof(uint16_t));
 }
 
 void rawConfigToLua(LuaState *state, const RawConfig &config) {
     if (!config.hasSubItems()) {
-        lua_pushstring(state, config.value().data());
+        lua_pushlstring(state, config.value().data(), config.value().size());
         return;
     }
 
     lua_newtable(state);
     if (!config.value().empty()) {
         lua_pushstring(state, "");
-        lua_pushstring(state, config.value().data());
+        lua_pushlstring(state, config.value().data(), config.value().size());
         lua_rawset(state, -3);
     }
     if (config.hasSubItems()) {
@@ -478,7 +483,8 @@ void luaToRawConfig(LuaState *state, RawConfig &config) {
     int type = lua_type(state, -1);
     if (type == LUA_TSTRING) {
         if (auto str = lua_tostring(state, -1)) {
-            config.setValue(str);
+            auto l = lua_rawlen(state, -1);
+            config.setValue(std::string(str, l));
         }
         return;
     }
